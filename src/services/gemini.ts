@@ -12,24 +12,6 @@ export interface AnalysisResult {
   confianca: number;
 }
 
-function parseGeminiResponse(text: string): AnalysisResult {
-  try {
-    // Find the first '{' and the last '}'
-    const startIndex = text.indexOf('{');
-    const endIndex = text.lastIndexOf('}');
-
-    if (startIndex === -1 || endIndex === -1 || startIndex >= endIndex) {
-      throw new Error("No valid JSON object found in response");
-    }
-
-    const jsonString = text.substring(startIndex, endIndex + 1);
-    return JSON.parse(jsonString) as AnalysisResult;
-  } catch (error) {
-    console.error("JSON Parse Error:", error, "Raw Text:", text);
-    throw new Error("Falha ao processar os dados da imagem. A IA retornou um formato inválido.");
-  }
-}
-
 export async function analyzeImage(base64Image: string): Promise<AnalysisResult> {
   // Remove the data URL prefix if present to get just the base64 string
   const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
@@ -81,9 +63,14 @@ export async function analyzeImage(base64Image: string): Promise<AnalysisResult>
     const text = response.text;
     if (!text) throw new Error("No response from AI");
 
-    return parseGeminiResponse(text);
+    console.log("Resposta Bruta da API:", text);
+
+    const jsonString = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+    
+    return JSON.parse(jsonString) as AnalysisResult;
+
   } catch (error) {
-    console.error("Error analyzing image:", error);
+    console.error("Erro no Parse ou Fetch:", error);
     throw error;
   }
 }
