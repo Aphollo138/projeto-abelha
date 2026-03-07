@@ -20,6 +20,7 @@ type CaptureState = 'idle' | 'analyzing' | 'result' | 'error';
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const isRequesting = useRef(false); // Hardware-level lock
   const [captureState, setCaptureState] = useState<CaptureState>('idle');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -120,12 +121,16 @@ export default function App() {
   };
 
   const captureImage = useCallback(async () => {
+    // 0. Hardware-level lock (Absolute priority)
+    if (isRequesting.current) return;
+
     // Double check state to prevent race conditions
     if (isProcessing) return;
     if (captureState !== 'idle') return;
     if (!videoRef.current || !canvasRef.current) return;
 
-    // 1. Set processing state immediately
+    // 1. Set locks immediately
+    isRequesting.current = true;
     setIsProcessing(true);
 
     try {
@@ -174,7 +179,7 @@ export default function App() {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-flash-latest",
+        model: "gemini-2.5-flash-latest",
         contents: [
           {
             role: "user",
@@ -218,6 +223,7 @@ export default function App() {
       setCaptureState('error');
       setDebugInfo(prev => (prev ? `${prev}\n\nERROR:\n${String(err)}` : String(err)));
     } finally {
+      isRequesting.current = false;
       setIsProcessing(false);
     }
   }, [captureState, isProcessing]);
