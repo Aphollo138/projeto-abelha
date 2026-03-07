@@ -1,38 +1,39 @@
 import { GoogleGenAI } from "@google/genai";
 
 // Initialize Gemini AI
-// Note: In a real production app, you might want to proxy this through a backend
-// to keep the key secure, but for this client-side demo we use the env var directly
-// as per the environment setup.
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY});
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-export interface BeeAnalysisResult {
-  nome_popular: string;
-  nome_cientifico: string;
-  tipo_ferrao: string;
-  caracteristicas: string;
-  habitat: string;
-  curiosidade_especial: string;
-  confianca_percentual: string;
+export interface AnalysisResult {
+  nome: string;
+  categoria: string;
+  detalhes: string;
+  utilidade_habitat: string;
+  curiosidade: string;
+  confianca: string;
 }
 
-export async function analyzeBeeImage(base64Image: string): Promise<BeeAnalysisResult> {
+export async function analyzeImage(base64Image: string): Promise<AnalysisResult> {
   // Remove the data URL prefix if present to get just the base64 string
   const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
 
   const prompt = `
-    Analise esta imagem e identifique a espécie de abelha.
-    Se não for uma abelha, retorne o JSON indicando que não é uma abelha no campo nome_popular.
+    Atue como um especialista em reconhecimento de imagem (Biologia e Objetos Gerais).
+    Analise esta imagem e identifique o objeto, animal, planta ou ser vivo principal.
+
+    1. Se for uma **Abelha** ou inseto: Forneça dados biológicos precisos (espécie, ferrão, etc).
+    2. Se for **Qualquer outra coisa** (objeto, outro animal, comida, paisagem): Identifique o que é e forneça informações relevantes sobre sua utilidade, origem ou características.
+
+    Responda OBRIGATORIAMENTE apenas com um objeto JSON válido.
+    NÃO use blocos de código Markdown (\`\`\`json ... \`\`\`).
     
-    Responda OBRIGATORIAMENTE apenas com um objeto JSON (sem markdown code blocks) com a seguinte estrutura:
+    Siga estritamente esta estrutura JSON:
     {
-      "nome_popular": "Nome Popular",
-      "nome_cientifico": "Nome Científico",
-      "tipo_ferrao": "Com ferrão / Sem ferrão",
-      "caracteristicas": "Texto curto com 2 características físicas visuais",
-      "habitat": "Onde costuma nidificar e comportamento",
-      "curiosidade_especial": "Fato interessante sobre mel ou polinização",
-      "confianca_percentual": "Porcentagem estimada de certeza (0-100)"
+      "nome": "Nome Popular do objeto ou ser vivo",
+      "categoria": "Nome Científico (se vivo) ou Categoria do objeto (ex: Eletrônico, Utensílio)",
+      "detalhes": "Descrição visual curta com 2 características marcantes",
+      "utilidade_habitat": "Habitat natural (se vivo) ou Utilidade principal (se objeto)",
+      "curiosidade": "Um fato interessante, histórico ou científico sobre o item",
+      "confianca": "Porcentagem estimada de certeza (apenas números, 0-100)"
     }
   `;
 
@@ -61,7 +62,15 @@ export async function analyzeBeeImage(base64Image: string): Promise<BeeAnalysisR
     const text = response.text;
     if (!text) throw new Error("No response from AI");
 
-    return JSON.parse(text) as BeeAnalysisResult;
+    // Robust JSON cleaning: Remove Markdown code blocks and whitespace
+    const cleanJson = text.replace(/```json\n?|```/g, "").trim();
+
+    try {
+      return JSON.parse(cleanJson) as AnalysisResult;
+    } catch (parseError) {
+      console.error("JSON Parse Error:", parseError, "Raw Text:", text);
+      throw new Error("Falha ao processar os dados da imagem. Tente novamente.");
+    }
   } catch (error) {
     console.error("Error analyzing image:", error);
     throw error;

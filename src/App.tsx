@@ -4,9 +4,9 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Camera, Zap, Info, X, RefreshCw, Loader2 } from 'lucide-react';
+import { Zap, Info, RefreshCw, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { analyzeBeeImage, type BeeAnalysisResult } from './services/gemini';
+import { analyzeImage, type AnalysisResult } from './services/gemini';
 
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -15,7 +15,7 @@ export default function App() {
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [result, setResult] = useState<BeeAnalysisResult | null>(null);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [showShutter, setShowShutter] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,6 +29,7 @@ export default function App() {
 
   const startCamera = async () => {
     try {
+      setError(null);
       const constraints = {
         video: {
           facingMode: 'environment',
@@ -44,11 +45,12 @@ export default function App() {
         videoRef.current.srcObject = mediaStream;
         videoRef.current.onloadedmetadata = () => {
           setIsCameraReady(true);
+          videoRef.current?.play().catch(e => console.error("Error playing video:", e));
         };
       }
     } catch (err) {
       console.error("Error accessing camera:", err);
-      setError("Não foi possível acessar a câmera. Verifique as permissões.");
+      setError("Não foi possível acessar a câmera. Verifique as permissões e recarregue.");
     }
   };
 
@@ -92,11 +94,14 @@ export default function App() {
     setError(null);
     
     try {
-      const analysis = await analyzeBeeImage(imageData);
+      const analysis = await analyzeImage(imageData);
       setResult(analysis);
     } catch (err) {
       console.error(err);
       setError("Erro ao analisar a imagem. Tente novamente.");
+      // On error, we might want to keep the captured image so user sees what failed,
+      // OR clear it to let them try again immediately. 
+      // Let's keep it but show the error, and the reset button allows retry.
     } finally {
       setIsAnalyzing(false);
     }
@@ -106,6 +111,10 @@ export default function App() {
     setCapturedImage(null);
     setResult(null);
     setError(null);
+    // Ensure video is playing when we return to camera view
+    if (videoRef.current && videoRef.current.paused) {
+        videoRef.current.play().catch(e => console.error("Error resuming video:", e));
+    }
   };
 
   return (
@@ -163,9 +172,10 @@ export default function App() {
             <motion.div 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="px-4 py-2 rounded-lg bg-red-500/80 backdrop-blur text-sm font-medium"
+              className="px-4 py-3 rounded-lg bg-red-500/90 backdrop-blur text-sm font-medium text-white shadow-lg max-w-[90%] text-center"
             >
               {error}
+              <button onClick={reset} className="ml-2 underline font-bold">Tentar de novo</button>
             </motion.div>
           )}
 
@@ -175,7 +185,7 @@ export default function App() {
               <button
                 onClick={captureImage}
                 disabled={!isCameraReady || isAnalyzing}
-                className="group relative w-20 h-20 rounded-full border-4 border-white/30 flex items-center justify-center transition-all active:scale-95"
+                className="group relative w-20 h-20 rounded-full border-4 border-white/30 flex items-center justify-center transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="w-16 h-16 rounded-full bg-white group-hover:bg-honey transition-colors shadow-lg shadow-black/50" />
               </button>
@@ -210,7 +220,7 @@ export default function App() {
                 <Loader2 className="w-6 h-6 text-honey animate-pulse" />
               </div>
             </div>
-            <p className="mt-4 text-white font-medium animate-pulse">Identificando espécie...</p>
+            <p className="mt-4 text-white font-medium animate-pulse">Identificando...</p>
           </motion.div>
         )}
       </AnimatePresence>
@@ -234,43 +244,32 @@ export default function App() {
               {/* Header Info */}
               <div className="flex justify-between items-start">
                 <div>
-                  <h2 className="text-3xl font-bold text-honey mb-1">{result.nome_popular}</h2>
-                  <p className="text-white/60 italic font-serif text-lg">{result.nome_cientifico}</p>
+                  <h2 className="text-3xl font-bold text-honey mb-1">{result.nome}</h2>
+                  <p className="text-white/60 italic font-serif text-lg">{result.categoria}</p>
                 </div>
                 <div className="flex flex-col items-end">
                   <span className="text-xs font-bold uppercase tracking-wider text-white/40 mb-1">Confiança</span>
-                  <span className="text-xl font-mono text-white">{result.confianca_percentual}%</span>
+                  <span className="text-xl font-mono text-white">{result.confianca}%</span>
                 </div>
-              </div>
-
-              {/* Tags */}
-              <div className="flex flex-wrap gap-2">
-                <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${
-                  result.tipo_ferrao.toLowerCase().includes('sem') 
-                    ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
-                    : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                }`}>
-                  {result.tipo_ferrao}
-                </span>
               </div>
 
               {/* Details Grid */}
               <div className="grid gap-4">
                 <div className="glass-panel p-4 rounded-xl">
                   <h3 className="text-honey text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2">
-                    <Info className="w-3 h-3" /> Características
+                    <Info className="w-3 h-3" /> Detalhes
                   </h3>
-                  <p className="text-white/90 leading-relaxed">{result.caracteristicas}</p>
+                  <p className="text-white/90 leading-relaxed">{result.detalhes}</p>
                 </div>
 
                 <div className="glass-panel p-4 rounded-xl">
-                  <h3 className="text-honey text-xs font-bold uppercase tracking-wider mb-2">Habitat & Comportamento</h3>
-                  <p className="text-white/90 leading-relaxed">{result.habitat}</p>
+                  <h3 className="text-honey text-xs font-bold uppercase tracking-wider mb-2">Habitat / Utilidade</h3>
+                  <p className="text-white/90 leading-relaxed">{result.utilidade_habitat}</p>
                 </div>
 
                 <div className="glass-panel p-4 rounded-xl bg-honey/5 border-honey/20">
                   <h3 className="text-honey text-xs font-bold uppercase tracking-wider mb-2">Curiosidade</h3>
-                  <p className="text-white/90 leading-relaxed italic">"{result.curiosidade_especial}"</p>
+                  <p className="text-white/90 leading-relaxed italic">"{result.curiosidade}"</p>
                 </div>
               </div>
 
