@@ -40,7 +40,7 @@ export async function analyzeImage(base64Image: string): Promise<AnalysisResult>
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-latest",
+      model: "gemini-1.5-flash",
       contents: [
         {
           role: "user",
