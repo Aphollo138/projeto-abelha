@@ -179,7 +179,7 @@ export default function App() {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3-flash",
         contents: [
           {
             role: "user",
@@ -232,9 +232,14 @@ export default function App() {
   const handleCaptureClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!isProcessing && captureState === 'idle') {
-      captureImage();
+    
+    // Block if already processing or hardware lock is active
+    if (isProcessing || isRequesting.current || captureState !== 'idle') {
+        console.log("Clique bloqueado: Processando ou travado.");
+        return;
     }
+
+    captureImage();
   };
 
   const reset = useCallback(() => {
