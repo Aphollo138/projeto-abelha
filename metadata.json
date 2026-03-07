@@ -1,0 +1,5 @@
+{
+  "name": "BioBee AI",
+  "description": "Professional Bee Species Recognition App using Gemini Vision",
+  "requestFramePermissions": ["camera"]
+}
