@@ -112,7 +112,7 @@ export default function App() {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-latest",
+        model: "gemini-flash-latest",
         contents: [
           {
             role: "user",
