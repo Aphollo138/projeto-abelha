@@ -120,33 +120,35 @@ export default function App() {
   };
 
   const captureImage = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current || captureState !== 'idle' || isProcessing) return;
+    // Double check state to prevent race conditions
+    if (isProcessing) return;
+    if (captureState !== 'idle') return;
+    if (!videoRef.current || !canvasRef.current) return;
 
     // 1. Set processing state immediately
     setIsProcessing(true);
 
-    // 2. Capture frame without stopping video
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      setIsProcessing(false);
-      return;
-    }
-    
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imageDataUrl = canvas.toDataURL('image/jpeg', 0.8);
-
-    // 3. Set state to analyzing
-    setCaptureState('analyzing');
-    setDebugInfo(null); // Clear previous debug info
-    
-    // 4. Analyze
     try {
+      // 2. Capture frame without stopping video
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        throw new Error("Could not get canvas context");
+      }
+      
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+
+      // 3. Set state to analyzing
+      setCaptureState('analyzing');
+      setDebugInfo(null); // Clear previous debug info
+      
+      // 4. Analyze
       const base64Data = imageDataUrl.replace(/^data:image\/\w+;base64,/, "");
 
       const prompt = `
@@ -219,6 +221,15 @@ export default function App() {
       setIsProcessing(false);
     }
   }, [captureState, isProcessing]);
+
+  // Handler wrapper to ensure strict event triggering
+  const handleCaptureClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isProcessing && captureState === 'idle') {
+      captureImage();
+    }
+  };
 
   const reset = useCallback(() => {
     setCaptureState('idle');
@@ -316,7 +327,7 @@ export default function App() {
                 {isProcessing ? 'Processando...' : 'Aponte e capture'}
               </p>
               <button
-                onClick={captureImage}
+                onClick={handleCaptureClick}
                 disabled={!isCameraReady || isProcessing}
                 className={`group relative flex items-center justify-center transition-all shadow-lg shadow-black/50 ${
                   isProcessing 
