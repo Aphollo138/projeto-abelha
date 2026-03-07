@@ -1,12 +1,19 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Zap, Info, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { analyzeImage, type AnalysisResult } from './services/gemini';
+import { GoogleGenAI } from "@google/genai";
+
+// Initialize Gemini AI
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+interface AnalysisResult {
+  nome: string;
+  categoria: string;
+  detalhes: string;
+  utilidade_ou_habitat: string;
+  curiosidade: string;
+  confianca: number;
+}
 
 type CaptureState = 'idle' | 'analyzing' | 'result' | 'error';
 
@@ -17,6 +24,7 @@ export default function App() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
 
   // Initialize Camera
   useEffect(() => {
@@ -75,16 +83,78 @@ export default function App() {
 
     // 2. Set state to analyzing
     setCaptureState('analyzing');
+    setDebugInfo(null); // Clear previous debug info
     
     // 3. Analyze
     try {
-      const analysis = await analyzeImage(imageDataUrl);
+      const base64Data = imageDataUrl.replace(/^data:image\/\w+;base64,/, "");
+
+      const prompt = `
+        Atue como um especialista em reconhecimento visual.
+        Analise esta imagem e identifique o objeto, animal, planta ou ser vivo principal.
+
+        Seja preciso e forneça informações educativas e interessantes.
+
+        Responda OBRIGATORIAMENTE apenas com um objeto JSON válido.
+        NÃO use blocos de código Markdown.
+        
+        Siga estritamente esta estrutura JSON:
+        {
+          "nome": "Nome Popular do item",
+          "categoria": "Categoria científica ou tipo do objeto",
+          "detalhes": "Descrição visual curta com características marcantes",
+          "utilidade_ou_habitat": "Habitat natural (se vivo) ou Utilidade principal (se objeto)",
+          "curiosidade": "Um fato interessante ou científico sobre o item",
+          "confianca": 99
+        }
+        
+        O campo 'confianca' deve ser um número entre 0 e 100.
+      `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-latest",
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: "image/jpeg",
+                  data: base64Data,
+                },
+              },
+            ],
+          },
+        ],
+        config: {
+          responseMimeType: "application/json",
+        },
+      });
+
+      const text = response.text;
+      if (!text) throw new Error("No response from AI");
+
+      setDebugInfo(text); // Capture raw response for debug
+
+      // Robust JSON extraction
+      const jsonStart = text.indexOf('{');
+      const jsonEnd = text.lastIndexOf('}');
+      
+      if (jsonStart === -1 || jsonEnd === -1) {
+          throw new Error("JSON não encontrado na resposta.");
+      }
+
+      const jsonString = text.substring(jsonStart, jsonEnd + 1);
+      const analysis = JSON.parse(jsonString) as AnalysisResult;
+
       setResult(analysis);
       setCaptureState('result');
     } catch (err) {
       console.error(err);
-      setError("Não foi possível identificar o objeto. Tente novamente.");
+      setError("Não foi possível identificar o objeto.");
       setCaptureState('error');
+      setDebugInfo(prev => (prev ? `${prev}\n\nERROR:\n${String(err)}` : String(err)));
     }
   }, [captureState]);
 
@@ -92,6 +162,7 @@ export default function App() {
     setCaptureState('idle');
     setResult(null);
     setError(null);
+    setDebugInfo(null);
     // Ensure video is playing
     if (videoRef.current && videoRef.current.paused) {
       videoRef.current.play().catch(console.error);
@@ -135,11 +206,22 @@ export default function App() {
         
         {/* Error State */}
         {captureState === 'error' && (
-          <div className="pointer-events-auto bg-red-500/90 backdrop-blur-md p-6 rounded-2xl mb-auto mt-auto text-center shadow-xl mx-4">
+          <div className="pointer-events-auto bg-red-500/90 backdrop-blur-md p-6 rounded-2xl mb-auto mt-auto text-center shadow-xl mx-4 flex flex-col max-h-[70vh]">
             <p className="font-medium mb-4">{error}</p>
+            
+            {/* Debug Box */}
+            {debugInfo && (
+              <div className="mb-4 text-left bg-black/50 rounded p-3 overflow-auto flex-1 min-h-[100px] border border-white/10">
+                <p className="text-[10px] text-white/50 mb-1 font-bold">DEBUG INFO:</p>
+                <pre className="text-[10px] font-mono text-white/90 whitespace-pre-wrap break-all">
+                  {debugInfo}
+                </pre>
+              </div>
+            )}
+
             <button 
               onClick={reset}
-              className="bg-white text-red-600 px-6 py-2 rounded-full font-bold text-sm hover:bg-gray-100 transition-colors"
+              className="bg-white text-red-600 px-6 py-3 rounded-full font-bold text-sm hover:bg-gray-100 transition-colors shadow-lg"
             >
               Tentar Novamente
             </button>
