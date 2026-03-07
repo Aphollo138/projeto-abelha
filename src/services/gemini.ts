@@ -4,7 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 // Note: In a real production app, you might want to proxy this through a backend
 // to keep the key secure, but for this client-side demo we use the env var directly
 // as per the environment setup.
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY});
 
 export interface BeeAnalysisResult {
   nome_popular: string;
