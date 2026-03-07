@@ -25,6 +25,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   
   // Zoom State
   const [zoomValue, setZoomValue] = useState(1);
@@ -119,9 +120,12 @@ export default function App() {
   };
 
   const captureImage = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current || captureState !== 'idle') return;
+    if (!videoRef.current || !canvasRef.current || captureState !== 'idle' || isProcessing) return;
 
-    // 1. Capture frame without stopping video
+    // 1. Set processing state immediately
+    setIsProcessing(true);
+
+    // 2. Capture frame without stopping video
     const video = videoRef.current;
     const canvas = canvasRef.current;
     
@@ -129,16 +133,19 @@ export default function App() {
     canvas.height = video.videoHeight;
     
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) {
+      setIsProcessing(false);
+      return;
+    }
     
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const imageDataUrl = canvas.toDataURL('image/jpeg', 0.8);
 
-    // 2. Set state to analyzing
+    // 3. Set state to analyzing
     setCaptureState('analyzing');
     setDebugInfo(null); // Clear previous debug info
     
-    // 3. Analyze
+    // 4. Analyze
     try {
       const base64Data = imageDataUrl.replace(/^data:image\/\w+;base64,/, "");
 
@@ -208,8 +215,10 @@ export default function App() {
       setError("Não foi possível identificar o objeto.");
       setCaptureState('error');
       setDebugInfo(prev => (prev ? `${prev}\n\nERROR:\n${String(err)}` : String(err)));
+    } finally {
+      setIsProcessing(false);
     }
-  }, [captureState]);
+  }, [captureState, isProcessing]);
 
   const reset = useCallback(() => {
     setCaptureState('idle');
@@ -282,11 +291,11 @@ export default function App() {
         )}
 
         {/* Idle State: Capture Button & Zoom Controls */}
-        {captureState === 'idle' && (
+        {(captureState === 'idle' || captureState === 'analyzing') && (
           <div className="pointer-events-auto flex flex-col items-center gap-6">
             
             {/* Zoom Slider (Only if supported) */}
-            {isZoomSupported && (
+            {isZoomSupported && captureState === 'idle' && (
               <div className="w-full max-w-xs glass-panel rounded-full px-4 py-2 flex items-center gap-3">
                 <ZoomOut className="w-4 h-4 text-white/70" />
                 <input
@@ -304,31 +313,32 @@ export default function App() {
 
             <div className="flex flex-col items-center gap-4">
               <p className="text-white/70 text-sm font-medium uppercase tracking-wider">
-                Aponte e capture
+                {isProcessing ? 'Processando...' : 'Aponte e capture'}
               </p>
               <button
                 onClick={captureImage}
-                disabled={!isCameraReady}
-                className="group relative w-20 h-20 rounded-full border-4 border-white/30 flex items-center justify-center transition-all active:scale-95 disabled:opacity-50"
+                disabled={!isCameraReady || isProcessing}
+                className={`group relative flex items-center justify-center transition-all shadow-lg shadow-black/50 ${
+                  isProcessing 
+                    ? 'w-48 h-16 rounded-full bg-white/10 border-2 border-white/20 cursor-not-allowed' 
+                    : 'w-20 h-20 rounded-full border-4 border-white/30 active:scale-95'
+                } disabled:opacity-80`}
               >
-                <div className="w-16 h-16 rounded-full bg-white group-hover:bg-honey transition-colors shadow-lg shadow-black/50" />
+                {isProcessing ? (
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="w-5 h-5 text-honey animate-spin" />
+                    <span className="text-white font-bold text-sm tracking-wide">Analisando... ⏳</span>
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 rounded-full bg-white group-hover:bg-honey transition-colors" />
+                )}
               </button>
             </div>
           </div>
         )}
 
-        {/* Analyzing State */}
-        {captureState === 'analyzing' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/20 backdrop-blur-sm z-30">
-            <div className="relative">
-              <div className="w-16 h-16 border-4 border-white/20 border-t-honey rounded-full animate-spin" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Loader2 className="w-6 h-6 text-honey animate-pulse" />
-              </div>
-            </div>
-            <p className="mt-4 text-white font-medium animate-pulse">Analisando imagem...</p>
-          </div>
-        )}
+        {/* Analyzing State - Removed separate loader since button now handles it */}
+        {/* captureState === 'analyzing' block removed */}
       </div>
 
       {/* Result Bottom Sheet */}
