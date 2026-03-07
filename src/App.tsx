@@ -7,10 +7,11 @@ import { GoogleGenAI } from "@google/genai";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 interface AnalysisResult {
-  nome: string;
+  nome_popular: string;
+  especie_ou_raca: string;
   categoria: string;
-  detalhes: string;
-  utilidade_ou_habitat: string;
+  dados_cientificos: string;
+  habitat_ou_origem: string;
   curiosidade: string;
   confianca: number;
 }
@@ -157,29 +158,25 @@ export default function App() {
       const base64Data = imageDataUrl.replace(/^data:image\/\w+;base64,/, "");
 
       const prompt = `
-        Atue como um especialista em reconhecimento visual.
-        Analise esta imagem e identifique o objeto, animal, planta ou ser vivo principal.
-
-        Seja preciso e forneça informações educativas e interessantes.
-
-        Responda OBRIGATORIAMENTE apenas com um objeto JSON válido.
-        NÃO use blocos de código Markdown.
+        Você é um especialista em biologia e taxonomia, além de um excelente identificador de objetos cotidianos. 
+        Analise a imagem. Se for um ser vivo (especialmente abelhas e animais), você DEVE fornecer o nome científico correto, a raça (se aplicável), a família biológica e dados científicos comportamentais precisos. 
+        Se for um objeto, descreva-o tecnicamente. 
         
-        Siga estritamente esta estrutura JSON:
+        Retorne EXCLUSIVAMENTE um objeto JSON válido com as chaves:
         {
-          "nome": "Nome Popular do item",
-          "categoria": "Categoria científica ou tipo do objeto",
-          "detalhes": "Descrição visual curta com características marcantes",
-          "utilidade_ou_habitat": "Habitat natural (se vivo) ou Utilidade principal (se objeto)",
-          "curiosidade": "Um fato interessante ou científico sobre o item",
+          "nome_popular": "Ex: Jataí, Cachorro Vira-lata, Caneca",
+          "especie_ou_raca": "Nome científico exato, raça do animal, ou 'N/A' se for objeto",
+          "categoria": "Ex: Inseto - Meliponíneo, Mamífero - Canídeo, Objeto",
+          "dados_cientificos": "Para seres vivos: família biológica, comportamento, se tem ferrão ou não. Para objetos: material e função técnica",
+          "habitat_ou_origem": "Onde vive ou onde é encontrado",
+          "curiosidade": "Fato interessante",
           "confianca": 99
         }
-        
-        O campo 'confianca' deve ser um número entre 0 e 100.
+        Nenhuma palavra fora do JSON.
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-1.5-flash",
         contents: [
           {
             role: "user",
@@ -382,8 +379,11 @@ export default function App() {
               {/* Header Info */}
               <div className="flex justify-between items-start">
                 <div>
-                  <h2 className="text-3xl font-bold text-honey mb-1">{result.nome}</h2>
-                  <p className="text-white/60 italic font-serif text-lg">{result.categoria}</p>
+                  <h2 className="text-3xl font-bold text-honey mb-1">{result.nome_popular}</h2>
+                  <p className="text-white/80 italic font-serif text-lg mb-1">{result.especie_ou_raca}</p>
+                  <span className="inline-block px-2 py-1 rounded bg-white/10 text-xs font-medium text-white/60 uppercase tracking-wider">
+                    {result.categoria}
+                  </span>
                 </div>
                 <div className="flex flex-col items-end">
                   <span className="text-xs font-bold uppercase tracking-wider text-white/40 mb-1">Confiança</span>
@@ -395,14 +395,14 @@ export default function App() {
               <div className="grid gap-4">
                 <div className="glass-panel p-4 rounded-xl">
                   <h3 className="text-honey text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2">
-                    <Info className="w-3 h-3" /> Detalhes
+                    <Info className="w-3 h-3" /> Dados Científicos
                   </h3>
-                  <p className="text-white/90 leading-relaxed">{result.detalhes}</p>
+                  <p className="text-white/90 leading-relaxed">{result.dados_cientificos}</p>
                 </div>
 
                 <div className="glass-panel p-4 rounded-xl">
-                  <h3 className="text-honey text-xs font-bold uppercase tracking-wider mb-2">Habitat / Utilidade</h3>
-                  <p className="text-white/90 leading-relaxed">{result.utilidade_ou_habitat}</p>
+                  <h3 className="text-honey text-xs font-bold uppercase tracking-wider mb-2">Habitat / Origem</h3>
+                  <p className="text-white/90 leading-relaxed">{result.habitat_ou_origem}</p>
                 </div>
 
                 <div className="glass-panel p-4 rounded-xl bg-honey/5 border-honey/20">
