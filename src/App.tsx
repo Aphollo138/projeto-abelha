@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Zap, Info, Loader2 } from 'lucide-react';
+import { Zap, Info, Loader2, ZoomIn, ZoomOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
 
@@ -25,6 +25,12 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
+  
+  // Zoom State
+  const [zoomValue, setZoomValue] = useState(1);
+  const [zoomLimits, setZoomLimits] = useState({ min: 1, max: 1, step: 0.1 });
+  const [isZoomSupported, setIsZoomSupported] = useState(false);
+  const [videoTrack, setVideoTrack] = useState<MediaStreamTrack | null>(null);
 
   // Initialize Camera
   useEffect(() => {
@@ -41,6 +47,38 @@ export default function App() {
         };
         
         stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        // Setup Video Track and Capabilities
+        const track = stream.getVideoTracks()[0];
+        setVideoTrack(track);
+
+        // Check capabilities (Zoom & Focus)
+        // Note: casting to any because zoom is not yet in standard TS types for MediaTrackCapabilities
+        const capabilities = track.getCapabilities() as any;
+        
+        if (capabilities.zoom) {
+          setIsZoomSupported(true);
+          setZoomLimits({
+            min: capabilities.zoom.min,
+            max: capabilities.zoom.max,
+            step: capabilities.zoom.step
+          });
+          
+          // Set initial zoom if settings available
+          const settings = track.getSettings() as any;
+          if (settings.zoom) {
+            setZoomValue(settings.zoom);
+          }
+        }
+
+        // Try to enable continuous focus (macro mode)
+        try {
+          await track.applyConstraints({ 
+            advanced: [{ focusMode: "continuous" }] as any 
+          });
+        } catch (e) {
+          console.log("Continuous focus not supported or failed to apply", e);
+        }
         
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -64,6 +102,21 @@ export default function App() {
       }
     };
   }, []);
+
+  const handleZoomChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newZoom = parseFloat(e.target.value);
+    setZoomValue(newZoom);
+    
+    if (videoTrack) {
+      try {
+        await videoTrack.applyConstraints({ 
+          advanced: [{ zoom: newZoom }] as any 
+        });
+      } catch (err) {
+        console.error("Error applying zoom:", err);
+      }
+    }
+  };
 
   const captureImage = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current || captureState !== 'idle') return;
@@ -228,19 +281,39 @@ export default function App() {
           </div>
         )}
 
-        {/* Idle State: Capture Button */}
+        {/* Idle State: Capture Button & Zoom Controls */}
         {captureState === 'idle' && (
-          <div className="pointer-events-auto flex flex-col items-center gap-4">
-            <p className="text-white/70 text-sm font-medium uppercase tracking-wider mb-4">
-              Aponte e capture
-            </p>
-            <button
-              onClick={captureImage}
-              disabled={!isCameraReady}
-              className="group relative w-20 h-20 rounded-full border-4 border-white/30 flex items-center justify-center transition-all active:scale-95 disabled:opacity-50"
-            >
-              <div className="w-16 h-16 rounded-full bg-white group-hover:bg-honey transition-colors shadow-lg shadow-black/50" />
-            </button>
+          <div className="pointer-events-auto flex flex-col items-center gap-6">
+            
+            {/* Zoom Slider (Only if supported) */}
+            {isZoomSupported && (
+              <div className="w-full max-w-xs glass-panel rounded-full px-4 py-2 flex items-center gap-3">
+                <ZoomOut className="w-4 h-4 text-white/70" />
+                <input
+                  type="range"
+                  min={zoomLimits.min}
+                  max={zoomLimits.max}
+                  step={zoomLimits.step}
+                  value={zoomValue}
+                  onChange={handleZoomChange}
+                  className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-honey"
+                />
+                <ZoomIn className="w-4 h-4 text-white/70" />
+              </div>
+            )}
+
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-white/70 text-sm font-medium uppercase tracking-wider">
+                Aponte e capture
+              </p>
+              <button
+                onClick={captureImage}
+                disabled={!isCameraReady}
+                className="group relative w-20 h-20 rounded-full border-4 border-white/30 flex items-center justify-center transition-all active:scale-95 disabled:opacity-50"
+              >
+                <div className="w-16 h-16 rounded-full bg-white group-hover:bg-honey transition-colors shadow-lg shadow-black/50" />
+              </button>
+            </div>
           </div>
         )}
 
