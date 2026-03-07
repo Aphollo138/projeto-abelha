@@ -1,10 +1,19 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Zap, Info, Loader2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Zap, Info, Loader2, ZoomIn, ZoomOut, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
 
 // Initialize Gemini AI
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+interface BeforeInstallPromptEvent extends Event {
+  readonly platforms: string[];
+  readonly userChoice: Promise<{
+    outcome: 'accepted' | 'dismissed';
+    platform: string;
+  }>;
+  prompt(): Promise<void>;
+}
 
 interface AnalysisResult {
   nome_popular: string;
@@ -34,6 +43,7 @@ export default function App() {
   const [zoomLimits, setZoomLimits] = useState({ min: 1, max: 1, step: 0.1 });
   const [isZoomSupported, setIsZoomSupported] = useState(false);
   const [videoTrack, setVideoTrack] = useState<MediaStreamTrack | null>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
   // Initialize Camera
   useEffect(() => {
@@ -103,6 +113,20 @@ export default function App() {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
+    };
+  }, []);
+
+  // PWA Install Prompt Listener
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   }, []);
 
@@ -176,7 +200,7 @@ export default function App() {
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-1.5-flash",
         contents: [
           {
             role: "user",
@@ -239,6 +263,22 @@ export default function App() {
     captureImage();
   };
 
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    
+    deferredPrompt.prompt();
+    
+    const choiceResult = await deferredPrompt.userChoice;
+    
+    if (choiceResult.outcome === 'accepted') {
+      console.log('User accepted the install prompt');
+    } else {
+      console.log('User dismissed the install prompt');
+    }
+    
+    setDeferredPrompt(null);
+  };
+
   const reset = useCallback(() => {
     setCaptureState('idle');
     setResult(null);
@@ -285,6 +325,19 @@ export default function App() {
       {/* Main UI Layer */}
       <div className="absolute inset-0 z-20 flex flex-col justify-end pb-12 px-6 pointer-events-none">
         
+        {/* Install App Button */}
+        {deferredPrompt && (
+          <div className="pointer-events-auto w-full flex justify-center mb-auto mt-24 animate-bounce">
+            <button
+              onClick={handleInstallClick}
+              className="bg-gradient-to-r from-honey to-yellow-400 text-black font-bold px-6 py-3 rounded-full shadow-xl flex items-center gap-3 transform hover:scale-105 transition-transform border-2 border-white/20"
+            >
+              <Download className="w-6 h-6" />
+              <span className="uppercase tracking-wider">Instalar Aplicativo</span>
+            </button>
+          </div>
+        )}
+
         {/* Error State */}
         {captureState === 'error' && (
           <div className="pointer-events-auto bg-red-500/90 backdrop-blur-md p-6 rounded-2xl mb-auto mt-auto text-center shadow-xl mx-4 flex flex-col max-h-[70vh]">
