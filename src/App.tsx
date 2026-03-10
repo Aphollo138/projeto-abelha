@@ -17,12 +17,11 @@ interface BeforeInstallPromptEvent extends Event {
 
 interface AnalysisResult {
   nome_popular: string;
-  especie_ou_raca: string;
+  nome_cientifico: string;
   categoria: string;
-  dados_cientificos: string;
-  habitat_ou_origem: string;
+  morfologia_ou_detalhes: string;
+  habitat_ou_ninho: string;
   curiosidade: string;
-  confianca: number;
 }
 
 type CaptureState = 'idle' | 'analyzing' | 'result' | 'error';
@@ -44,6 +43,8 @@ export default function App() {
   const [isZoomSupported, setIsZoomSupported] = useState(false);
   const [videoTrack, setVideoTrack] = useState<MediaStreamTrack | null>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [referenceImage, setReferenceImage] = useState<string | null>(null);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
 
   // Initialize Camera
   useEffect(() => {
@@ -173,6 +174,7 @@ export default function App() {
       
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const imageDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      setCapturedImage(imageDataUrl);
 
       // 3. Set state to analyzing
       setCaptureState('analyzing');
@@ -181,23 +183,27 @@ export default function App() {
       // 4. Analyze
       const base64Data = imageDataUrl.replace(/^data:image\/\w+;base64,/, "");
 
-      const prompt = `
-        Você é um especialista em biologia e taxonomia, além de um excelente identificador de objetos cotidianos. 
-        Analise a imagem. Se for um ser vivo (especialmente abelhas e animais), você DEVE fornecer o nome científico correto, a raça (se aplicável), a família biológica e dados científicos comportamentais precisos. 
-        Se for um objeto, descreva-o tecnicamente. 
-        
-        Retorne EXCLUSIVAMENTE um objeto JSON válido com as chaves:
-        {
-          "nome_popular": "Ex: Jataí, Cachorro Vira-lata, Caneca",
-          "especie_ou_raca": "Nome científico exato, raça do animal, ou 'N/A' se for objeto",
-          "categoria": "Ex: Inseto - Meliponíneo, Mamífero - Canídeo, Objeto",
-          "dados_cientificos": "Para seres vivos: família biológica, comportamento, se tem ferrão ou não. Para objetos: material e função técnica",
-          "habitat_ou_origem": "Onde vive ou onde é encontrado",
-          "curiosidade": "Fato interessante",
-          "confianca": 99
-        }
-        Nenhuma palavra fora do JSON.
-      `;
+      const prompt = `Você é um entomologista nível Ph.D., especialista absoluto em Meliponicultura (Abelhas Nativas Sem Ferrão - ASF do Brasil) e taxonomia geral. 
+Sua tarefa é analisar a imagem e cravar a identificação com a maior precisão possível. 
+REGRAS RÍGIDAS DE IDENTIFICAÇÃO:
+
+NÃO fique em cima do muro. Se houver dúvida entre espécies (ex: Arapuá vs Tubuna), tome uma decisão baseada na morfologia visível (brilho do abdômen, proporção das asas, pilosidade, formato das pernas/corbícula). Escolha UMA única espécie.
+
+Se for uma abelha, o foco DEVE ser na morfologia exata e no tipo de nidificação (ninho).
+
+Se for outro animal, planta ou objeto cotidiano, identifique com precisão técnica e científica.
+
+Você DEVE retornar ÚNICA e EXCLUSIVAMENTE um objeto JSON válido. NÃO use blocos de código markdown (como \`\`\`json). Comece com { e termine com }.
+
+Estrutura OBRIGATÓRIA:
+{
+"nome_popular": "Nome popular (ex: Tubuna, Jataí, Caneca de Cerâmica)",
+"nome_cientifico": "Nome científico exato (ex: Scaptotrigona bipunctata) ou 'N/A' se for objeto",
+"categoria": "Classificação (ex: Inseto - Meliponíneo, Inseto - Apis, Objeto, etc.)",
+"morfologia_ou_detalhes": "Se abelha: descreva cor, pelos, tamanho e asas. Se objeto: material e design.",
+"habitat_ou_ninho": "Se abelha: descreva como é a entrada do ninho (tubo de cera, barro, etc). Se objeto: onde é usado.",
+"curiosidade": "Uma curiosidade científica ou de uso muito específica."
+}`;
 
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
@@ -237,6 +243,18 @@ export default function App() {
       const analysis = JSON.parse(jsonString) as AnalysisResult;
 
       setResult(analysis);
+
+      // Busca na Wikipedia
+      try {
+        const termoDeBusca = analysis.nome_cientifico !== 'N/A' ? analysis.nome_cientifico : analysis.nome_popular;
+        const wikiRes = await fetch(`https://pt.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(termoDeBusca)}`);
+        const wikiData = await wikiRes.json();
+        setReferenceImage(wikiData.thumbnail?.source || null);
+      } catch (e) {
+        console.error("Erro ao buscar imagem na Wikipedia", e);
+        setReferenceImage(null);
+      }
+
       setCaptureState('result');
     } catch (err) {
       console.error(err);
@@ -284,6 +302,8 @@ export default function App() {
     setResult(null);
     setError(null);
     setDebugInfo(null);
+    setReferenceImage(null);
+    setCapturedImage(null);
     // Ensure video is playing
     if (videoRef.current && videoRef.current.paused) {
       videoRef.current.play().catch(console.error);
@@ -429,44 +449,58 @@ export default function App() {
             </div>
 
             <div className="p-6 pt-2 pb-10 space-y-6">
+              {/* Image Comparison Section */}
+              {capturedImage && (
+                <div className={`grid gap-4 mb-2 ${referenceImage ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] uppercase tracking-wider text-white/50 font-bold ml-1">Sua Foto</span>
+                    <img src={capturedImage} alt="Capturada" className="w-full h-36 object-cover rounded-2xl border border-white/10 shadow-lg" />
+                  </div>
+                  {referenceImage && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] uppercase tracking-wider text-white/50 font-bold ml-1">Referência (Wiki)</span>
+                      <img src={referenceImage} alt="Referência" className="w-full h-36 object-cover rounded-2xl border border-white/10 shadow-lg" />
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Header Info */}
-              <div className="flex justify-between items-start">
-                <div>
-                  <h2 className="text-3xl font-bold text-honey mb-1">{result.nome_popular}</h2>
-                  <p className="text-white/80 italic font-serif text-lg mb-1">{result.especie_ou_raca}</p>
-                  <span className="inline-block px-2 py-1 rounded bg-white/10 text-xs font-medium text-white/60 uppercase tracking-wider">
-                    {result.categoria}
-                  </span>
-                </div>
-                <div className="flex flex-col items-end">
-                  <span className="text-xs font-bold uppercase tracking-wider text-white/40 mb-1">Confiança</span>
-                  <span className="text-xl font-mono text-white">{result.confianca}%</span>
-                </div>
+              <div className="flex flex-col items-start">
+                <h2 className="text-3xl font-bold text-white mb-1">{result.nome_popular}</h2>
+                <p className="text-gray-400 italic font-serif text-lg mb-3">{result.nome_cientifico}</p>
+                <span className="inline-block px-3 py-1 rounded-full bg-honey/20 text-honey text-xs font-bold uppercase tracking-wider">
+                  {result.categoria}
+                </span>
               </div>
 
               {/* Details Grid */}
-              <div className="grid gap-4">
-                <div className="glass-panel p-4 rounded-xl">
+              <div className="grid gap-3">
+                <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
                   <h3 className="text-honey text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2">
-                    <Info className="w-3 h-3" /> Dados Científicos
+                    <Info className="w-4 h-4" /> Morfologia / Detalhes
                   </h3>
-                  <p className="text-white/90 leading-relaxed">{result.dados_cientificos}</p>
+                  <p className="text-white/80 text-sm leading-relaxed">{result.morfologia_ou_detalhes}</p>
                 </div>
 
-                <div className="glass-panel p-4 rounded-xl">
-                  <h3 className="text-honey text-xs font-bold uppercase tracking-wider mb-2">Habitat / Origem</h3>
-                  <p className="text-white/90 leading-relaxed">{result.habitat_ou_origem}</p>
+                <div className="bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-sm">
+                  <h3 className="text-honey text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <Zap className="w-4 h-4" /> Habitat / Ninho
+                  </h3>
+                  <p className="text-white/80 text-sm leading-relaxed">{result.habitat_ou_ninho}</p>
                 </div>
 
-                <div className="glass-panel p-4 rounded-xl bg-honey/5 border-honey/20">
-                  <h3 className="text-honey text-xs font-bold uppercase tracking-wider mb-2">Curiosidade</h3>
-                  <p className="text-white/90 leading-relaxed italic">"{result.curiosidade}"</p>
+                <div className="bg-honey/10 border border-honey/20 p-4 rounded-2xl backdrop-blur-sm">
+                  <h3 className="text-honey text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <Info className="w-4 h-4" /> Curiosidade
+                  </h3>
+                  <p className="text-white/90 text-sm leading-relaxed italic">"{result.curiosidade}"</p>
                 </div>
               </div>
 
               <button 
                 onClick={reset}
-                className="w-full py-4 rounded-xl bg-white text-black font-bold text-lg hover:bg-honey transition-colors shadow-lg"
+                className="w-full py-4 rounded-2xl bg-white text-black font-bold text-lg hover:bg-gray-200 transition-colors shadow-xl mt-4"
               >
                 Nova Identificação
               </button>
